@@ -1,6 +1,6 @@
 {
   "name": "@light4/pi-shell-bridge",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "packageManager": "pnpm@12.8.1",
   "description": "Shell completion, fish-style autosuggestions and fish/zsh/bash history for Pi's ! commands",
   "type": "module",
