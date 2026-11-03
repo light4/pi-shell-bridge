@@ -1,5 +1,5 @@
 {
-  "name": "@light4/pi-bang-shell",
+  "name": "@light4/pi-shell-bridge",
   "version": "0.1.0",
   "packageManager": "pnpm@12.8.1",
   "description": "Shell completion and fish/zsh/bash history for Pi's ! commands",
@@ -17,7 +17,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/light4/pi-bang-shell.git"
+    "url": "git+https://github.com/light4/pi-shell-bridge.git"
   },
   "files": [
     "src"

@@ -9,8 +9,8 @@ zmodload zsh/zpty || exit 1
 
 local line_to_complete=$1
 local no_rc=$2
-local dir=$(mktemp -d "${TMPDIR:-/tmp}/pi-bang-shell.XXXXXX") || exit 1
-trap 'rm -rf -- ${(q)dir}; zpty -d pi_bang 2>/dev/null' EXIT
+local dir=$(mktemp -d "${TMPDIR:-/tmp}/pi-shell-bridge.XXXXXX") || exit 1
+trap 'rm -rf -- ${(q)dir}; zpty -d pi_shell_bridge 2>/dev/null' EXIT
 
 local user_zdotdir=${ZDOTDIR:-$HOME}
 
@@ -18,15 +18,15 @@ if [[ $no_rc != no-rc ]]; then
   cat >| $dir/.zshenv <<ZSHENV
 ZDOTDIR=${(q)user_zdotdir}
 [[ -r \$ZDOTDIR/.zshenv ]] && source \$ZDOTDIR/.zshenv
-__pi_bang_user_zdotdir=\$ZDOTDIR
+__pi_shell_bridge_user_zdotdir=\$ZDOTDIR
 ZDOTDIR=${(q)dir}
 ZSHENV
 fi
 
 cat >| $dir/.zshrc <<ZSHRC
 unset HISTFILE
-if [[ -n \$__pi_bang_user_zdotdir ]]; then
-  ZDOTDIR=\$__pi_bang_user_zdotdir
+if [[ -n \$__pi_shell_bridge_user_zdotdir ]]; then
+  ZDOTDIR=\$__pi_shell_bridge_user_zdotdir
   [[ -r \$ZDOTDIR/.zshrc ]] && source \$ZDOTDIR/.zshrc
 fi
 source ${(q)dir}/setup.zsh
@@ -36,13 +36,13 @@ cat >| $dir/setup.zsh <<'SETUP'
 unset HISTFILE
 PROMPT= RPROMPT= PS2=
 unsetopt zle_bracketed_paste 2>/dev/null
-(( $+functions[compdef] )) || { autoload -Uz compinit && compinit -C -d "${TMPDIR:-/tmp}/pi-bang-shell-zcompdump-$UID"; }
+(( $+functions[compdef] )) || { autoload -Uz compinit && compinit -C -d "${TMPDIR:-/tmp}/pi-shell-bridge-zcompdump-$UID"; }
 bindkey '^M' undefined
 bindkey '^J' undefined
 bindkey '^I' complete-word
-__pi_bang_null() { print -rn -- $'\0\r\n' }
-compprefuncs=( __pi_bang_null )
-comppostfuncs=( __pi_bang_null exit )
+__pi_shell_bridge_null() { print -rn -- $'\0\r\n' }
+compprefuncs=( __pi_shell_bridge_null )
+comppostfuncs=( __pi_shell_bridge_null exit )
 zstyle ':completion:*' list-grouped false
 zstyle ':completion:*' list-separator ''
 zstyle ':completion:*' menu no
@@ -72,19 +72,19 @@ compadd() {
     print -r -- "$IPREFIX$apre$hpre$__hits[$i]$dsuf$hsuf$asuf$dscr"
   done
 }
-print -r -- __PI_BANG_READY__
+print -r -- __PI_SHELL_BRIDGE_READY__
 SETUP
 
 export ZDOTDIR=$dir
-zpty pi_bang zsh -i
+zpty pi_shell_bridge zsh -i
 local line
-while zpty -r pi_bang line; do
-  [[ $line == __PI_BANG_READY__* ]] && break
+while zpty -r pi_shell_bridge line; do
+  [[ $line == __PI_SHELL_BRIDGE_READY__* ]] && break
 done
-zpty -w -n pi_bang "$line_to_complete"$'\t'
+zpty -w -n pi_shell_bridge "$line_to_complete"$'\t'
 
 integer seen=0
-while zpty -r pi_bang line; do
+while zpty -r pi_shell_bridge line; do
   if [[ $line == *$'\0\r'* ]]; then
     (( seen++ )) && exit 0
     continue

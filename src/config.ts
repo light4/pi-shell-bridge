@@ -5,7 +5,7 @@ import { getAgentDir } from "@earendil-works/pi-coding-agent";
 export const SHELLS = ["fish", "zsh", "bash"] as const;
 export type ShellName = (typeof SHELLS)[number];
 
-export interface BangShellConfig {
+export interface ShellBridgeConfig {
 	/** Completion backend for `!` lines: a shell name, "auto" ($SHELL first) or "off". */
 	completion: ShellName | "auto" | "off";
 	/** Shells whose history receives `!` commands: "auto" (shells with an existing history file), "off" or a list. */
@@ -16,7 +16,7 @@ export interface BangShellConfig {
 	ignore: string[];
 }
 
-export const DEFAULT_CONFIG: BangShellConfig = {
+export const DEFAULT_CONFIG: ShellBridgeConfig = {
 	completion: "auto",
 	history: "auto",
 	loadUserConfig: true,
@@ -24,20 +24,20 @@ export const DEFAULT_CONFIG: BangShellConfig = {
 };
 
 export function configPath(): string {
-	return join(getAgentDir(), "pi-bang-shell.json");
+	return join(getAgentDir(), "pi-shell-bridge.json");
 }
 
 function isShell(value: unknown): value is ShellName {
 	return typeof value === "string" && (SHELLS as readonly string[]).includes(value);
 }
 
-function parseCompletion(value: unknown): BangShellConfig["completion"] | undefined {
+function parseCompletion(value: unknown): ShellBridgeConfig["completion"] | undefined {
 	if (typeof value !== "string") return undefined;
 	const normalized = value.trim().toLowerCase();
 	return normalized === "auto" || normalized === "off" || isShell(normalized) ? normalized : undefined;
 }
 
-function parseHistory(value: unknown): BangShellConfig["history"] | undefined {
+function parseHistory(value: unknown): ShellBridgeConfig["history"] | undefined {
 	if (typeof value === "string") {
 		const normalized = value.trim().toLowerCase();
 		if (normalized === "auto" || normalized === "off") return normalized;
@@ -48,19 +48,19 @@ function parseHistory(value: unknown): BangShellConfig["history"] | undefined {
 	return [...new Set(shells)];
 }
 
-export function parseConfig(raw: unknown, env: NodeJS.ProcessEnv = process.env): BangShellConfig {
+export function parseConfig(raw: unknown, env: NodeJS.ProcessEnv = process.env): ShellBridgeConfig {
 	const object = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
 	return {
 		completion:
-			parseCompletion(env.PI_BANG_SHELL_COMPLETION) ?? parseCompletion(object.completion) ?? DEFAULT_CONFIG.completion,
-		history: parseHistory(env.PI_BANG_SHELL_HISTORY) ?? parseHistory(object.history) ?? DEFAULT_CONFIG.history,
+			parseCompletion(env.PI_SHELL_BRIDGE_COMPLETION) ?? parseCompletion(object.completion) ?? DEFAULT_CONFIG.completion,
+		history: parseHistory(env.PI_SHELL_BRIDGE_HISTORY) ?? parseHistory(object.history) ?? DEFAULT_CONFIG.history,
 		loadUserConfig:
 			typeof object.loadUserConfig === "boolean" ? object.loadUserConfig : DEFAULT_CONFIG.loadUserConfig,
 		ignore: Array.isArray(object.ignore) ? object.ignore.filter((item): item is string => typeof item === "string") : [],
 	};
 }
 
-export function loadConfig(): { config: BangShellConfig; error?: string } {
+export function loadConfig(): { config: ShellBridgeConfig; error?: string } {
 	let raw: unknown;
 	try {
 		raw = JSON.parse(readFileSync(configPath(), "utf8"));

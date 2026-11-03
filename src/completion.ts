@@ -1,12 +1,12 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { AutocompleteItem, AutocompleteProvider } from "@earendil-works/pi-tui";
-import type { BangShellConfig, ShellName } from "./config.ts";
+import type { ShellBridgeConfig, ShellName } from "./config.ts";
 import { completeWith } from "./shells.ts";
 
 const MAX_ITEMS = 200;
 
 /** Text after `!` / `!!` and before the cursor, or undefined outside a bash-mode line. */
-export function bangCommandBeforeCursor(lines: string[], cursorLine: number, cursorCol: number): string | undefined {
+export function shellCommandBeforeCursor(lines: string[], cursorLine: number, cursorCol: number): string | undefined {
 	if (cursorLine !== 0) return undefined;
 	const match = (lines[0] ?? "").slice(0, cursorCol).match(/^\s*!!?(.*)$/s);
 	return match?.[1]?.trimStart();
@@ -48,18 +48,18 @@ export function applyShellCompletion(
 	return { lines: next, cursorLine, cursorCol: before.length + value.length + suffix.length };
 }
 
-export function createBangCompletionProvider(
+export function createShellCompletionProvider(
 	pi: ExtensionAPI,
 	current: AutocompleteProvider,
 	shell: ShellName,
 	getCwd: () => string,
-	config: BangShellConfig,
+	config: ShellBridgeConfig,
 ): AutocompleteProvider {
 	return {
 		triggerCharacters: current.triggerCharacters,
 
 		async getSuggestions(lines, cursorLine, cursorCol, options) {
-			const command = bangCommandBeforeCursor(lines, cursorLine, cursorCol);
+			const command = shellCommandBeforeCursor(lines, cursorLine, cursorCol);
 			// Spawn a shell only on an explicit Tab (force), never on every keystroke.
 			if (command === undefined || !options.force) {
 				return current.getSuggestions(lines, cursorLine, cursorCol, options);
@@ -75,14 +75,14 @@ export function createBangCompletionProvider(
 		},
 
 		applyCompletion(lines, cursorLine, cursorCol, item, prefix) {
-			if (bangCommandBeforeCursor(lines, cursorLine, cursorCol) === undefined) {
+			if (shellCommandBeforeCursor(lines, cursorLine, cursorCol) === undefined) {
 				return current.applyCompletion(lines, cursorLine, cursorCol, item, prefix);
 			}
 			return applyShellCompletion(lines, cursorLine, cursorCol, item.value, prefix);
 		},
 
 		shouldTriggerFileCompletion(lines, cursorLine, cursorCol) {
-			if (bangCommandBeforeCursor(lines, cursorLine, cursorCol) !== undefined) return true;
+			if (shellCommandBeforeCursor(lines, cursorLine, cursorCol) !== undefined) return true;
 			return current.shouldTriggerFileCompletion?.(lines, cursorLine, cursorCol) ?? true;
 		},
 	};

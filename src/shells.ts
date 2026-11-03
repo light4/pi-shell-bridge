@@ -3,9 +3,9 @@ import { homedir } from "node:os";
 import { basename, delimiter, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ExecResult, ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { SHELLS, type BangShellConfig, type ShellName } from "./config.ts";
+import { SHELLS, type ShellBridgeConfig, type ShellName } from "./config.ts";
 
-const MARKER = "__PI_BANG_SHELL_READY__";
+const MARKER = "__PI_SHELL_BRIDGE_READY__";
 const COMPLETE_TIMEOUT_MS = 5_000;
 const HISTORY_TIMEOUT_MS = 5_000;
 const PROBE_TIMEOUT_MS = 5_000;
@@ -42,7 +42,7 @@ export function isInstalled(shell: ShellName): boolean {
 	return found;
 }
 
-export function resolveCompletionShell(config: BangShellConfig): ShellName | undefined {
+export function resolveCompletionShell(config: ShellBridgeConfig): ShellName | undefined {
 	if (config.completion === "off") return undefined;
 	if (config.completion !== "auto") return isInstalled(config.completion) ? config.completion : undefined;
 	const login = basename(process.env.SHELL ?? "");
@@ -76,7 +76,7 @@ export async function completeWith(
 	shell: ShellName,
 	commandLine: string,
 	cwd: string,
-	config: BangShellConfig,
+	config: ShellBridgeConfig,
 	signal: AbortSignal,
 ): Promise<Completion[]> {
 	const options = { cwd, signal, timeout: COMPLETE_TIMEOUT_MS };
@@ -143,7 +143,7 @@ function sniffZshExtended(file: string): boolean {
 async function probeHistoryTarget(
 	pi: ExtensionAPI,
 	shell: ShellName,
-	config: BangShellConfig,
+	config: ShellBridgeConfig,
 ): Promise<HistoryTarget | undefined> {
 	const home = homedir();
 	switch (shell) {
@@ -188,7 +188,7 @@ async function probeHistoryTarget(
 	}
 }
 
-function historyTarget(pi: ExtensionAPI, shell: ShellName, config: BangShellConfig): Promise<HistoryTarget | undefined> {
+function historyTarget(pi: ExtensionAPI, shell: ShellName, config: ShellBridgeConfig): Promise<HistoryTarget | undefined> {
 	let target = targetCache.get(shell);
 	if (!target) {
 		target = probeHistoryTarget(pi, shell, config).catch(() => undefined);
@@ -198,7 +198,7 @@ function historyTarget(pi: ExtensionAPI, shell: ShellName, config: BangShellConf
 }
 
 /** Resolve which shells receive history; probes run once per Pi process. */
-export async function resolveHistoryShells(pi: ExtensionAPI, config: BangShellConfig): Promise<ShellName[]> {
+export async function resolveHistoryShells(pi: ExtensionAPI, config: ShellBridgeConfig): Promise<ShellName[]> {
 	if (config.history === "off") return [];
 	const candidates = (config.history === "auto" ? [...SHELLS] : config.history).filter(isInstalled);
 	const resolved = await Promise.all(
@@ -217,7 +217,7 @@ export async function appendHistory(
 	pi: ExtensionAPI,
 	shell: ShellName,
 	command: string,
-	config: BangShellConfig,
+	config: ShellBridgeConfig,
 ): Promise<void> {
 	const target = await historyTarget(pi, shell, config);
 	if (!target) return;
@@ -237,7 +237,7 @@ export async function appendHistory(
 					"--noprofile",
 					"-c",
 					'HISTFILE=$1; if [ "$2" != __unset__ ]; then HISTTIMEFORMAT=$2; fi; set -o history; history -s -- "$3"; history -a',
-					"pi-bang-shell",
+					"pi-shell-bridge",
 					target.file,
 					target.format ?? "__unset__",
 					command,
@@ -255,7 +255,7 @@ export async function appendHistory(
 					"-i",
 					"-c",
 					'[[ $2 == 1 ]] && setopt extended_history; HISTFILE=$1; HISTSIZE=100; SAVEHIST=1000000; print -s -- "$3"; fc -AI; unset HISTFILE',
-					"pi-bang-shell",
+					"pi-shell-bridge",
 					target.file,
 					target.format ?? "0",
 					command,

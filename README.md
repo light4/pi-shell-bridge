@@ -1,4 +1,4 @@
-# pi-bang-shell
+# pi-shell-bridge
 
 A Pi extension that connects Pi's `!` / `!!` commands to your shell:
 
@@ -31,7 +31,7 @@ Defaults work without configuration:
 - **completion** `auto`: the shell named by `$SHELL` when supported, otherwise the first installed of fish, zsh, bash.
 - **history** `auto`: every installed shell whose history file already exists. zsh without a `HISTFILE` is skipped.
 
-To change them, create `~/.pi/agent/pi-bang-shell.json`:
+To change them, create `~/.pi/agent/pi-shell-bridge.json`:
 
 ```json
 {
@@ -52,8 +52,8 @@ To change them, create `~/.pi/agent/pi-bang-shell.json`:
 Environment variables override the file for one Pi launch:
 
 ```sh
-PI_BANG_SHELL_COMPLETION=bash PI_BANG_SHELL_HISTORY=fish,zsh pi
-PI_BANG_SHELL_HISTORY=off pi
+PI_SHELL_BRIDGE_COMPLETION=bash PI_SHELL_BRIDGE_HISTORY=fish,zsh pi
+PI_SHELL_BRIDGE_HISTORY=off pi
 ```
 
 Pi trims the command after `!`, so the usual "leading space skips history" convention cannot apply; use `ignore` instead.
@@ -61,7 +61,7 @@ Pi trims the command after `!`, so the usual "leading space skips history" conve
 ## Install
 
 ```sh
-pi install git:github.com/light4/pi-bang-shell@v0.1.0
+pi install git:github.com/light4/pi-shell-bridge@v0.1.0
 ```
 
 Restart Pi or run `/reload` afterwards.
@@ -71,13 +71,13 @@ Restart Pi or run `/reload` afterwards.
 Pi auto-discovers an extension whose directory contains `index.ts`:
 
 ```sh
-ln -sfn ~/sources/pi-bang-shell/src ~/.pi/agent/extensions/pi-bang-shell
+ln -sfn ~/sources/pi-shell-bridge/src ~/.pi/agent/extensions/pi-shell-bridge
 ```
 
 Or load it for a single run:
 
 ```sh
-pi -e ~/sources/pi-bang-shell/src/index.ts
+pi -e ~/sources/pi-shell-bridge/src/index.ts
 ```
 
 Type-check with:
