@@ -63,7 +63,7 @@ Pi trims the command after `!`, so the usual "leading space skips history" conve
 ## Install
 
 ```sh
-pi install git:github.com/light4/pi-shell-bridge@v0.1.0
+pi install git:github.com/light4/pi-shell-bridge@v0.1.1
 ```
 
 Restart Pi or run `/reload` afterwards.
