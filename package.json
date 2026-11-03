@@ -2,7 +2,7 @@
   "name": "@light4/pi-shell-bridge",
   "version": "0.1.1",
   "packageManager": "pnpm@12.8.1",
-  "description": "Shell completion and fish/zsh/bash history for Pi's ! commands",
+  "description": "Shell completion, fish-style autosuggestions and fish/zsh/bash history for Pi's ! commands",
   "type": "module",
   "keywords": [
     "pi-package",
@@ -10,6 +10,7 @@
     "shell",
     "completion",
     "history",
+    "autosuggestion",
     "fish",
     "zsh",
     "bash"

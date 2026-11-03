@@ -256,6 +256,16 @@ function historyTarget(shell: ShellName, config: ShellBridgeConfig): Promise<His
 	return target;
 }
 
+/** The history file of `shell` (probed once per Pi process), or undefined when it keeps none. */
+export async function historyFile(shell: ShellName, config: ShellBridgeConfig): Promise<string | undefined> {
+	return (await historyTarget(shell, config))?.file;
+}
+
+/** The shell whose history feeds autosuggestions: the launching shell, else the first configured history shell. */
+export function suggestionShell(config: ShellBridgeConfig): ShellName | undefined {
+	return autoShell() ?? (Array.isArray(config.history) ? config.history.find(isInstalled) : undefined);
+}
+
 /** Resolve which shells receive history; probes run once per Pi process. */
 export async function resolveHistoryShells(config: ShellBridgeConfig): Promise<ShellName[]> {
 	if (config.history === "off") return [];
