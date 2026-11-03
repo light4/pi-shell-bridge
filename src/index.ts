@@ -21,32 +21,50 @@ export default function piShellBridge(pi: ExtensionAPI): void {
 	let historyShells: Promise<ShellName[]> | undefined;
 	let cwd = process.cwd();
 
-	pi.on("session_start", async (_event, ctx) => {
-		cwd = ctx.cwd;
-		if (error) ctx.ui.notify(`pi-shell-bridge: ${error}`, "warning");
-		const shell = resolveCompletionShell(config);
-		if (shell) {
-			ctx.ui.addAutocompleteProvider((current) =>
-				createShellCompletionProvider(pi, current, shell, () => cwd, config),
-			);
+	const warn = (ctx: { ui: { notify(message: string, type?: "info" | "warning" | "error"): void } }, error: unknown) => {
+		try {
+			ctx.ui.notify(`pi-shell-bridge: ${error instanceof Error ? error.message : String(error)}`, "warning");
+		} catch {
+			// The UI may already be gone; never let the bridge take Pi down.
 		}
-		// Probe history locations in the background so the first command is not delayed.
-		historyShells ??= resolveHistoryShells(pi, config);
+	};
+	const shellsForHistory = () =>
+		(historyShells ??= resolveHistoryShells(config).catch((): ShellName[] => []));
+
+	pi.on("session_start", async (_event, ctx) => {
+		try {
+			cwd = ctx.cwd;
+			if (error) warn(ctx, error);
+			const shell = resolveCompletionShell(config);
+			if (shell) {
+				ctx.ui.addAutocompleteProvider((current) =>
+					createShellCompletionProvider(current, shell, () => cwd, config),
+				);
+			}
+			// Probe history locations in the background so the first command is not delayed.
+			void shellsForHistory();
+		} catch (caught) {
+			warn(ctx, caught);
+		}
 	});
 
 	pi.on("user_bash", async (event, ctx) => {
-		cwd = event.cwd || cwd;
-		const command = event.command.trim();
-		if (!command || ignore.some((pattern) => pattern.test(command))) return undefined;
-		historyShells ??= resolveHistoryShells(pi, config);
-		void historyShells
-			.then((shells) => Promise.allSettled(shells.map((shell) => appendHistory(pi, shell, command, config))))
-			.then((results) => {
-				const failures = results
-					.filter((result): result is PromiseRejectedResult => result.status === "rejected")
-					.map((result) => (result.reason instanceof Error ? result.reason.message : String(result.reason)));
-				if (failures.length > 0) ctx.ui.notify(`pi-shell-bridge: ${failures.join("; ")}`, "warning");
-			});
+		try {
+			cwd = event.cwd || cwd;
+			const command = event.command.trim();
+			if (!command || ignore.some((pattern) => pattern.test(command))) return undefined;
+			void shellsForHistory()
+				.then((shells) => Promise.allSettled(shells.map((shell) => appendHistory(shell, command, config))))
+				.then((results) => {
+					const failures = results
+						.filter((result): result is PromiseRejectedResult => result.status === "rejected")
+						.map((result) => (result.reason instanceof Error ? result.reason.message : String(result.reason)));
+					if (failures.length > 0) warn(ctx, failures.join("; "));
+				})
+				.catch((caught: unknown) => warn(ctx, caught));
+		} catch (caught) {
+			warn(ctx, caught);
+		}
 		return undefined; // let Pi run the command as usual
 	});
 }

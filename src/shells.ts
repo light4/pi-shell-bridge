@@ -2,8 +2,9 @@ import { accessSync, closeSync, constants, existsSync, fstatSync, openSync, read
 import { homedir } from "node:os";
 import { basename, delimiter, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { ExecResult, ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { execFileSync } from "node:child_process";
 import { SHELLS, type ShellBridgeConfig, type ShellName } from "./config.ts";
+import { type RunResult, run } from "./exec.ts";
 
 const MARKER = "__PI_SHELL_BRIDGE_READY__";
 const COMPLETE_TIMEOUT_MS = 5_000;
@@ -42,12 +43,72 @@ export function isInstalled(shell: ShellName): boolean {
 	return found;
 }
 
+function asShell(name: string | undefined): ShellName | undefined {
+	const normalized = basename(name ?? "").replace(/^-/, ""); // login shells show up as "-zsh"
+	return (SHELLS as readonly string[]).includes(normalized) ? (normalized as ShellName) : undefined;
+}
+
+const MAX_ANCESTORS = 16;
+/** Interactive shells we recognise as "the shell Pi was launched from", supported or not. */
+const KNOWN_SHELLS = new Set([
+	...SHELLS,
+	"sh", "dash", "ash", "ksh", "mksh", "oksh", "pdksh", "csh", "tcsh", "nu", "xonsh", "elvish",
+	"pwsh", "powershell", "ion", "oil", "osh", "ysh", "murex", "rc", "es", "yash", "posh",
+]);
+
+export interface LaunchingShell {
+	/** Executable name of the nearest shell ancestor, e.g. "fish" or "nu"; undefined when none was found. */
+	name?: string;
+	/** The same shell when pi-shell-bridge supports it. */
+	shell?: ShellName;
+}
+
+let launchingShell: LaunchingShell | undefined;
+
+/** The nearest shell ancestor of this Pi process, i.e. the shell Pi was started from. Never throws. */
+export function detectLaunchingShell(): LaunchingShell {
+	if (launchingShell) return launchingShell;
+	launchingShell = {};
+	let pid = process.ppid;
+	try {
+		for (let depth = 0; depth < MAX_ANCESTORS && pid > 1; depth++) {
+			const output = execFileSync("ps", ["-o", "ppid=,comm=", "-p", String(pid)], {
+				encoding: "utf8",
+				stdio: ["ignore", "pipe", "ignore"],
+				timeout: 1_000,
+			}).trim();
+			const match = output.match(/^(\d+)\s+(.+)$/);
+			if (!match) break;
+			const name = basename(match[2].trim()).replace(/^-/, "");
+			if (KNOWN_SHELLS.has(name)) {
+				launchingShell = { name, shell: asShell(name) };
+				break;
+			}
+			pid = Number(match[1]);
+		}
+	} catch {
+		// `ps` missing or failing: behave as if no launching shell was found.
+	}
+	return launchingShell;
+}
+
+/**
+ * The shell `auto` refers to: the shell Pi was launched from. Only when no shell ancestor is found
+ * (e.g. Pi started directly by a terminal or IDE) does $SHELL stand in. An unsupported launching shell
+ * (nu, sh, …) yields undefined.
+ */
+export function autoShell(): ShellName | undefined {
+	const launching = detectLaunchingShell();
+	const shell = launching.name ? launching.shell : asShell(process.env.SHELL);
+	return shell && isInstalled(shell) ? shell : undefined;
+}
+
 export function resolveCompletionShell(config: ShellBridgeConfig): ShellName | undefined {
 	if (config.completion === "off") return undefined;
 	if (config.completion !== "auto") return isInstalled(config.completion) ? config.completion : undefined;
-	const login = basename(process.env.SHELL ?? "");
-	const ordered = [login, ...SHELLS].filter((name): name is ShellName => (SHELLS as readonly string[]).includes(name));
-	return ordered.find(isInstalled);
+	// Completion only runs on Tab and never touches history, so any installed shell is a fine fallback.
+	const login = asShell(process.env.SHELL);
+	return autoShell() ?? (login && isInstalled(login) ? login : undefined) ?? SHELLS.find(isInstalled);
 }
 
 function afterMarker(stdout: string): string[] {
@@ -72,7 +133,6 @@ export function parseCompletions(lines: string[]): Completion[] {
 
 /** Ask a shell to complete `commandLine` (text before the cursor) in `cwd`. */
 export async function completeWith(
-	pi: ExtensionAPI,
 	shell: ShellName,
 	commandLine: string,
 	cwd: string,
@@ -80,12 +140,12 @@ export async function completeWith(
 	signal: AbortSignal,
 ): Promise<Completion[]> {
 	const options = { cwd, signal, timeout: COMPLETE_TIMEOUT_MS };
-	let result: ExecResult;
+	let result: RunResult;
 	let lines: string[];
 	switch (shell) {
 		case "fish": {
 			const args = config.loadUserConfig ? [] : ["--no-config"];
-			result = await pi.exec(
+			result = await run(
 				"fish",
 				[...args, "-c", `echo ${MARKER}; complete -C -- "$argv[1]"`, commandLine],
 				options,
@@ -95,14 +155,14 @@ export async function completeWith(
 		}
 		case "bash": {
 			const args = config.loadUserConfig ? ["-i"] : ["--norc", "--noprofile"];
-			result = await pi.exec("bash", [...args, BASH_COMPLETE_SCRIPT, commandLine, MARKER], options);
+			result = await run("bash", [...args, BASH_COMPLETE_SCRIPT, commandLine, MARKER], options);
 			lines = afterMarker(result.stdout);
 			break;
 		}
 		case "zsh": {
 			const args = [ZSH_CAPTURE_SCRIPT, commandLine];
 			if (!config.loadUserConfig) args.push("no-rc");
-			result = await pi.exec("zsh", ["-f", ...args], options);
+			result = await run("zsh", ["-f", ...args], options);
 			lines = result.stdout.split("\n");
 			break;
 		}
@@ -141,7 +201,6 @@ function sniffZshExtended(file: string): boolean {
 }
 
 async function probeHistoryTarget(
-	pi: ExtensionAPI,
 	shell: ShellName,
 	config: ShellBridgeConfig,
 ): Promise<HistoryTarget | undefined> {
@@ -156,7 +215,7 @@ async function probeHistoryTarget(
 			let file = process.env.HISTFILE || join(home, ".bash_history");
 			let format: string | undefined = process.env.HISTTIMEFORMAT;
 			if (config.loadUserConfig) {
-				const result = await pi.exec(
+				const result = await run(
 					"bash",
 					["-i", "-c", `printf '%s\\n' ${MARKER} "$HISTFILE" "\${HISTTIMEFORMAT-__unset__}"`],
 					{ cwd: home, timeout: PROBE_TIMEOUT_MS },
@@ -172,7 +231,7 @@ async function probeHistoryTarget(
 			let file = process.env.HISTFILE;
 			let format: string | undefined;
 			if (config.loadUserConfig) {
-				const result = await pi.exec(
+				const result = await run(
 					"zsh",
 					["-i", "-c", `print -rl -- ${MARKER} "$HISTFILE"; [[ -o extendedhistory ]] && print 1 || print 0`],
 					{ cwd: home, timeout: PROBE_TIMEOUT_MS },
@@ -188,24 +247,25 @@ async function probeHistoryTarget(
 	}
 }
 
-function historyTarget(pi: ExtensionAPI, shell: ShellName, config: ShellBridgeConfig): Promise<HistoryTarget | undefined> {
+function historyTarget(shell: ShellName, config: ShellBridgeConfig): Promise<HistoryTarget | undefined> {
 	let target = targetCache.get(shell);
 	if (!target) {
-		target = probeHistoryTarget(pi, shell, config).catch(() => undefined);
+		target = probeHistoryTarget(shell, config).catch(() => undefined);
 		targetCache.set(shell, target);
 	}
 	return target;
 }
 
 /** Resolve which shells receive history; probes run once per Pi process. */
-export async function resolveHistoryShells(pi: ExtensionAPI, config: ShellBridgeConfig): Promise<ShellName[]> {
+export async function resolveHistoryShells(config: ShellBridgeConfig): Promise<ShellName[]> {
 	if (config.history === "off") return [];
-	const candidates = (config.history === "auto" ? [...SHELLS] : config.history).filter(isInstalled);
+	const auto = autoShell();
+	const candidates = config.history === "auto" ? (auto ? [auto] : []) : config.history.filter(isInstalled);
 	const resolved = await Promise.all(
 		candidates.map(async (shell) => {
-			const target = await historyTarget(pi, shell, config);
+			const target = await historyTarget(shell, config);
 			if (!target) return undefined;
-			// In auto mode only write to shells the user already keeps history for.
+			// In auto mode only write to the launching shell, and only when the user keeps history for it.
 			return config.history !== "auto" || existsSync(target.file) ? shell : undefined;
 		}),
 	);
@@ -214,23 +274,22 @@ export async function resolveHistoryShells(pi: ExtensionAPI, config: ShellBridge
 
 /** Append one command to a shell's history using that shell's own history writer. */
 export async function appendHistory(
-	pi: ExtensionAPI,
 	shell: ShellName,
 	command: string,
 	config: ShellBridgeConfig,
 ): Promise<void> {
-	const target = await historyTarget(pi, shell, config);
+	const target = await historyTarget(shell, config);
 	if (!target) return;
 	const options = { timeout: HISTORY_TIMEOUT_MS };
-	let result: ExecResult;
+	let result: RunResult;
 	switch (shell) {
 		case "fish": {
 			// --no-config disables history persistence, so fish must load its normal configuration.
-			result = await pi.exec("fish", ["-c", 'history append -- "$argv[1]"', command], options);
+			result = await run("fish", ["-c", 'history append -- "$argv[1]"', command], options);
 			break;
 		}
 		case "bash": {
-			result = await pi.exec(
+			result = await run(
 				"bash",
 				[
 					"--norc",
@@ -248,7 +307,7 @@ export async function appendHistory(
 		}
 		case "zsh": {
 			// Interactive (-i) so history is active; HISTFILE is unset afterwards so exit does not rewrite the file.
-			result = await pi.exec(
+			result = await run(
 				"zsh",
 				[
 					"-f",

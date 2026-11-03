@@ -1,4 +1,3 @@
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { AutocompleteItem, AutocompleteProvider } from "@earendil-works/pi-tui";
 import type { ShellBridgeConfig, ShellName } from "./config.ts";
 import { completeWith } from "./shells.ts";
@@ -49,7 +48,6 @@ export function applyShellCompletion(
 }
 
 export function createShellCompletionProvider(
-	pi: ExtensionAPI,
 	current: AutocompleteProvider,
 	shell: ShellName,
 	getCwd: () => string,
@@ -64,7 +62,12 @@ export function createShellCompletionProvider(
 			if (command === undefined || !options.force) {
 				return current.getSuggestions(lines, cursorLine, cursorCol, options);
 			}
-			const completions = await completeWith(pi, shell, command, getCwd(), config, options.signal);
+			let completions: Awaited<ReturnType<typeof completeWith>>;
+			try {
+				completions = await completeWith(shell, command, getCwd(), config, options.signal);
+			} catch {
+				return null;
+			}
 			if (options.signal.aborted || completions.length === 0) return null;
 			const items: AutocompleteItem[] = completions.slice(0, MAX_ITEMS).map((completion) => ({
 				value: completion.value,

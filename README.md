@@ -28,8 +28,10 @@ The shell is started only when you press `Tab`, never on every keystroke. Comple
 
 Defaults work without configuration:
 
-- **completion** `auto`: the shell named by `$SHELL` when supported, otherwise the first installed of fish, zsh, bash.
-- **history** `auto`: every installed shell whose history file already exists. zsh without a `HISTFILE` is skipped.
+- **completion** `auto`: the shell Pi was launched from (its nearest shell ancestor); if that shell is not supported, `$SHELL`, then the first installed of fish, zsh, bash.
+- **history** `auto`: only the shell Pi was launched from, and only when its history file already exists. When Pi is started from an unsupported shell (`nu`, `sh`, `dash`, …) nothing is written; when no shell ancestor exists (Pi launched directly by a terminal or IDE), `$SHELL` is used. zsh without a `HISTFILE` is skipped.
+
+Helper shells run in their own session without a controlling terminal, so interactive startup files (`bash -i`, `zsh -i`) can never take over Pi's terminal, whichever shell Pi was started from.
 
 To change them, create `~/.pi/agent/pi-shell-bridge.json`:
 
@@ -45,7 +47,7 @@ To change them, create `~/.pi/agent/pi-shell-bridge.json`:
 | Key | Values | Default |
 |---|---|---|
 | `completion` | `auto`, `fish`, `zsh`, `bash`, `off` | `auto` |
-| `history` | `auto`, `off`, or a list of `fish` / `zsh` / `bash` | `auto` |
+| `history` | `auto` (launching shell), `off`, or a list of `fish` / `zsh` / `bash` | `auto` |
 | `loadUserConfig` | Load your shell startup files for completion and to discover `HISTFILE` | `true` |
 | `ignore` | Regular expressions; matching commands are not written to history | `[]` |
 
@@ -85,6 +87,16 @@ Type-check with:
 ```sh
 pnpm install
 pnpm run typecheck
+```
+
+## End-to-end tests
+
+`e2e/test_e2e.py` (Python standard library only, run through [uv](https://docs.astral.sh/uv/)) starts real interactive fish, zsh, bash, sh, dash and nu shells in a pseudo terminal, launches `pi` with this extension from each, and checks that Pi stays in the terminal foreground (is never stopped by job control), that `Tab` completes `!` lines and that `!` commands reach the expected history files. Every test uses a temporary `HOME` and Pi agent dir, so your own history and settings are untouched; missing shells are skipped.
+
+```sh
+pnpm run test:e2e                              # or: uv run e2e/test_e2e.py
+E2E_SHELLS=fish,zsh uv run e2e/test_e2e.py     # only these shells
+E2E_EXTENSION=/path/to/src/index.ts PI_BIN=/path/to/pi E2E_VERBOSE=1 uv run e2e/test_e2e.py
 ```
 
 ## Acknowledgements
