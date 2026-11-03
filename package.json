@@ -1,0 +1,49 @@
+{
+  "name": "@light4/pi-bang-shell",
+  "version": "0.1.0",
+  "packageManager": "pnpm@12.8.1",
+  "description": "Shell completion and fish/zsh/bash history for Pi's ! commands",
+  "type": "module",
+  "keywords": [
+    "pi-package",
+    "pi-extension",
+    "shell",
+    "completion",
+    "history",
+    "fish",
+    "zsh",
+    "bash"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/light4/pi-bang-shell.git"
+  },
+  "files": [
+    "src"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "pi": {
+    "extensions": [
+      "./src/index.ts"
+    ]
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "^1.4.0",
+    "@earendil-works/pi-tui": "^1.4.0",
+    "@types/node": "^22.19.0",
+    "typescript": "^7.0.2"
+  }
+}
