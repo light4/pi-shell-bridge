@@ -10,7 +10,9 @@ HOME and Pi agent dir, runs `pi -ne --no-session -e <extension>` from it and che
 - Pi is not stopped by job control and stays in the terminal's foreground process group
   (regression: `fish: Job 1, 'pi' has stopped`), also with unsupported launching shells;
 - Tab on a `!` line completes through the launching shell;
-- `!` commands reach the history of the launching shell only (history "auto"), or every configured shell.
+- `!` commands reach the history of the launching shell only (history "auto"), or every configured shell;
+- fish-style autosuggestions: the newest matching history command is shown after the cursor without becoming
+  part of the line, → accepts it, Alt+F accepts one word.
 
 Run:  uv run e2e/test_e2e.py            (or: pnpm run test:e2e)
 Env:  PI_BIN=<pi executable>  E2E_EXTENSION=<extension entry>  E2E_SHELLS=fish,zsh,...  E2E_VERBOSE=1
@@ -105,6 +107,27 @@ class Sandbox:
             env.update(extra)
         return env
 
+    def seed(self, shell: str, commands: list[str]) -> None:
+        """Write commands (oldest first) in the shell's own history format."""
+        file = self.history[shell]
+        with file.open("a") as out:
+            for when, command in enumerate(commands, start=1_700_000_000):
+                if shell == "fish":
+                    out.write(f"- cmd: {command}\n  when: {when}\n")
+                elif shell == "zsh":
+                    out.write(f": {when}:0;{command}\n")
+                else:
+                    out.write(f"{command}\n")
+
+    def commands(self, shell: str) -> list[str]:
+        """History entries of a shell, oldest first (single-line entries are enough for these tests)."""
+        text = self.history[shell].read_text(errors="replace")
+        if shell == "fish":
+            return [line[7:] for line in text.splitlines() if line.startswith("- cmd: ")]
+        if shell == "zsh":
+            return [re.sub(r"^: \d+:\d+;", "", line) for line in text.splitlines() if line]
+        return [line for line in text.splitlines() if line and not re.fullmatch(r"#\d+", line)]
+
     def cleanup(self) -> None:
         shutil.rmtree(self.home, ignore_errors=True)
 
@@ -114,6 +137,7 @@ class Terminal:
 
     def __init__(self, argv: list[str], env: dict[str, str], cwd: Path) -> None:
         self.output = ""
+        self.log = ""
         self.pid, self.fd = pty.fork()
         if self.pid == 0:  # child: session leader with the pty as controlling terminal
             try:
@@ -136,6 +160,12 @@ class Terminal:
                 return
             self.output += chunk.decode(errors="replace")
 
+    def reset(self) -> None:
+        """Forget what was shown so far: the next expect() only sees new output."""
+        self.read(0.3)
+        self.log += self.output
+        self.output = ""
+
     def text(self) -> str:
         return ANSI.sub("", self.output)
 
@@ -154,6 +184,12 @@ class Terminal:
     def send(self, data: str) -> None:
         os.write(self.fd, data.encode())
 
+    def keys(self, *keys: str) -> None:
+        """Send keys one by one, so an escape sequence is not merged with the next key."""
+        for key in keys:
+            self.send(key)
+            self.read(0.3)
+
     def close(self) -> None:
         for pid in [self.pid, *descendants(self.pid)]:
             try:
@@ -171,7 +207,7 @@ class Terminal:
                 break
             time.sleep(0.05)
         if VERBOSE:
-            sys.stderr.write(f"\n----- screen -----\n{self.text()[-3000:]}\n")
+            sys.stderr.write(f"\n----- screen -----\n{ANSI.sub('', self.log + self.output)[-3000:]}\n")
 
 
 def process_table() -> list[tuple[int, int, str, str]]:
@@ -328,6 +364,58 @@ class ShellBridgeE2E(unittest.TestCase):
         for name in ("fish", "zsh", "bash"):
             self.assertTrue(wait_for(lambda: self.history_contains(name, marker)), f"{marker} not in {name} history")
         session.assert_running_in_foreground()
+
+    def check_autosuggest(self, shell: str) -> None:
+        marker = f"pi-e2e-suggest-{uuid.uuid4().hex[:8]}"
+        older, newest = f"echo {marker} --older", f"echo {marker} --extensions --all"
+        self.sandbox.seed(shell, [older, newest])
+        session = self.start(shell)
+        session.assert_running_in_foreground()
+        typed = f"echo {marker}"
+
+        # Shown after the cursor, newest match first; Enter runs only what was typed.
+        session.term.reset()
+        session.term.send(f"!{typed}")
+        session.term.expect(f"!{newest}", timeout=10)
+        session.term.send("\r")
+        self.assertTrue(wait_for(lambda: self.sandbox.commands(shell)[-1:] == [typed]),
+                        f"Enter should run {typed!r} only; history tail: {self.sandbox.commands(shell)[-3:]}")
+
+        # → accepts the whole suggestion (now the session's own `typed` is newest, so extend the prefix).
+        session.term.reset()
+        session.term.send(f"!{typed} --e")
+        session.term.expect(f"!{newest}", timeout=10)
+        session.term.keys("\x1b[C", "\r")
+        self.assertTrue(wait_for(lambda: self.sandbox.commands(shell)[-1:] == [newest]),
+                        f"→ should accept {newest!r}; history tail: {self.sandbox.commands(shell)[-3:]}")
+
+        # Alt+F accepts one word.
+        session.term.reset()
+        session.term.send(f"!{typed} --o")
+        session.term.expect(f"!{older}", timeout=10)
+        session.term.keys("\x1bf", "\r")
+        self.assertTrue(wait_for(lambda: self.sandbox.commands(shell)[-1:] == [older]),
+                        f"Alt+F should accept one word; history tail: {self.sandbox.commands(shell)[-3:]}")
+        session.term.reset()
+        session.term.send(f"!{typed} --ext")
+        session.term.expect(f"!{newest}", timeout=10)
+        session.term.keys("\x1bf", "\r")
+        partial = f"{typed} --extensions"
+        self.assertTrue(wait_for(lambda: self.sandbox.commands(shell)[-1:] == [partial]),
+                        f"Alt+F should accept {partial!r}; history tail: {self.sandbox.commands(shell)[-3:]}")
+        session.assert_running_in_foreground()
+
+    @needs("fish")
+    def test_autosuggest_fish(self) -> None:
+        self.check_autosuggest("fish")
+
+    @needs("zsh")
+    def test_autosuggest_zsh(self) -> None:
+        self.check_autosuggest("zsh")
+
+    @needs("bash")
+    def test_autosuggest_bash(self) -> None:
+        self.check_autosuggest("bash")
 
     @needs("sh")
     def test_unsupported_sh(self) -> None:

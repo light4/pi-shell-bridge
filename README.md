@@ -3,6 +3,7 @@
 A Pi extension that connects Pi's `!` / `!!` commands to your shell:
 
 - **Tab completion** — on a `!cmd` line, `Tab` asks your shell for completions (commands, subcommands, options, paths, git branches, …) with their descriptions.
+- **Autosuggestions** — like fish, typing a `!` command shows the newest matching command from your shell history in grey after the cursor; `→` accepts it.
 - **Shell history** — every `!` / `!!` command is appended to the fish, zsh and bash history you already keep, so it shows up in `↑`, `Ctrl+R`, atuin imports and so on.
 
 Commands still run through Pi's built-in bash; this extension only adds completion and history.
@@ -20,6 +21,7 @@ Each shell writes its own history file, so locking, timestamps, multi-line comma
 ## Use
 
 - Type `!git chec` and press `Tab`. A single match is inserted directly; several matches open Pi's completion list. Directories and `--option=` values do not get a trailing space, so you can keep completing.
+- Type `!pi` and, if you ran `pi update --extensions` before, ` update --extensions` appears dimmed after the cursor, as in fish. It is only a suggestion: `Enter` runs what you typed. `→`, `End`, `Ctrl+F` or `Ctrl+E` accept the whole suggestion; `Alt+→` or `Alt+F` accept one word. Suggestions come from the launching shell's history file and the `!` commands of the current session, newest first; they appear only while the cursor is at the end of a single-line `!` command and no completion list is open. The keys follow Pi's `tui.editor.cursorRight`, `cursorLineEnd` and `cursorWordRight` keybindings.
 - Run any `!` or `!!` command. It is added to the history of each configured shell. Open fish shells see it after `history merge` (or in new sessions); zsh with `SHARE_HISTORY` picks it up automatically.
 
 The shell is started only when you press `Tab`, never on every keystroke. Completion takes roughly 0.1–0.3 s for fish and bash and 0.5–1 s for zsh, depending on your startup files.
@@ -39,6 +41,7 @@ To change them, create `~/.pi/agent/pi-shell-bridge.json`:
 {
   "completion": "zsh",
   "history": ["zsh", "fish"],
+  "autosuggest": true,
   "loadUserConfig": true,
   "ignore": ["^export .*TOKEN", "password"]
 }
@@ -48,6 +51,7 @@ To change them, create `~/.pi/agent/pi-shell-bridge.json`:
 |---|---|---|
 | `completion` | `auto`, `fish`, `zsh`, `bash`, `off` | `auto` |
 | `history` | `auto` (launching shell), `off`, or a list of `fish` / `zsh` / `bash` | `auto` |
+| `autosuggest` | Fish-style inline suggestions on `!` lines (`true` / `false`) | `true` |
 | `loadUserConfig` | Load your shell startup files for completion and to discover `HISTFILE` | `true` |
 | `ignore` | Regular expressions; matching commands are not written to history | `[]` |
 
@@ -56,7 +60,10 @@ Environment variables override the file for one Pi launch:
 ```sh
 PI_SHELL_BRIDGE_COMPLETION=bash PI_SHELL_BRIDGE_HISTORY=fish,zsh pi
 PI_SHELL_BRIDGE_HISTORY=off pi
+PI_SHELL_BRIDGE_AUTOSUGGEST=off pi
 ```
+
+Autosuggestions replace Pi's input editor with a subclass of `CustomEditor`, keeping every Pi keybinding. If another extension has already replaced the editor, pi-shell-bridge leaves it alone and shows no suggestions; set `"autosuggest": false` to never touch the editor.
 
 Pi trims the command after `!`, so the usual "leading space skips history" convention cannot apply; use `ignore` instead.
 

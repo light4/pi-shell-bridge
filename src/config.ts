@@ -10,6 +10,8 @@ export interface ShellBridgeConfig {
 	completion: ShellName | "auto" | "off";
 	/** Shells whose history receives `!` commands: "auto" (shells with an existing history file), "off" or a list. */
 	history: ShellName[] | "auto" | "off";
+	/** Fish-style inline suggestions from the launching shell's history on `!` lines. */
+	autosuggest: boolean;
 	/** Load the user's shell startup files (aliases, custom completions, HISTFILE). */
 	loadUserConfig: boolean;
 	/** Regular expressions; matching commands are not written to history. */
@@ -19,6 +21,7 @@ export interface ShellBridgeConfig {
 export const DEFAULT_CONFIG: ShellBridgeConfig = {
 	completion: "auto",
 	history: "auto",
+	autosuggest: true,
 	loadUserConfig: true,
 	ignore: [],
 };
@@ -48,12 +51,23 @@ function parseHistory(value: unknown): ShellBridgeConfig["history"] | undefined 
 	return [...new Set(shells)];
 }
 
+function parseBoolean(value: unknown): boolean | undefined {
+	if (typeof value === "boolean") return value;
+	if (typeof value !== "string") return undefined;
+	const normalized = value.trim().toLowerCase();
+	if (["1", "true", "on", "yes"].includes(normalized)) return true;
+	if (["0", "false", "off", "no"].includes(normalized)) return false;
+	return undefined;
+}
+
 export function parseConfig(raw: unknown, env: NodeJS.ProcessEnv = process.env): ShellBridgeConfig {
 	const object = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
 	return {
 		completion:
 			parseCompletion(env.PI_SHELL_BRIDGE_COMPLETION) ?? parseCompletion(object.completion) ?? DEFAULT_CONFIG.completion,
 		history: parseHistory(env.PI_SHELL_BRIDGE_HISTORY) ?? parseHistory(object.history) ?? DEFAULT_CONFIG.history,
+		autosuggest:
+			parseBoolean(env.PI_SHELL_BRIDGE_AUTOSUGGEST) ?? parseBoolean(object.autosuggest) ?? DEFAULT_CONFIG.autosuggest,
 		loadUserConfig:
 			typeof object.loadUserConfig === "boolean" ? object.loadUserConfig : DEFAULT_CONFIG.loadUserConfig,
 		ignore: Array.isArray(object.ignore) ? object.ignore.filter((item): item is string => typeof item === "string") : [],
