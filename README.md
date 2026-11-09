@@ -69,13 +69,13 @@ Pi trims the command after `!`, so the usual "leading space skips history" conve
 
 ## Install
 
-Install the v0.1.3 release from npm:
+Install the v0.1.4 release from npm:
 
 ```sh
-pi install npm:@light4/pi-shell-bridge@0.1.3
+pi install npm:@light4/pi-shell-bridge@0.1.4
 ```
 
-Or install the same release from GitHub: `pi install git:github.com/light4/pi-shell-bridge@v0.1.3`.
+Or install the same release from GitHub: `pi install git:github.com/light4/pi-shell-bridge@v0.1.4`.
 
 Restart Pi or run `/reload` afterwards.
 
